@@ -62,17 +62,17 @@ func main() {
 		err := rows.Scan(&id, &name, &deviceStatus, &placeOfInstallation, &yearOfInstallation, &written)
 		if err != nil {
 			logger.Fatal(err)
-		} /* else {
+		} else {
 			logger.Println("Successfully2")
-		}*/
+		}
 		fmt.Printf("%2v | %9v | %12v | %19v | %18v | %6v\n", id, name, deviceStatus, placeOfInstallation, yearOfInstallation, written)
 	}
 
 	err = rows.Err()
 	if err != nil {
 		logger.Fatal(err)
-	} /* else {
+	} else {
 		logger.Println("Successfully3")
-	}*/
+	}
 
 }
