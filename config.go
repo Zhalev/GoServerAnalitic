@@ -34,7 +34,6 @@ func Config() {
 
 	if err = db.Ping(); err != nil {
 		logger.Panic("Failed to get config: ", err)
-		/*defer db.Close()*/
 	} else {
 		logger.Println("DB connected successfully")
 	}
