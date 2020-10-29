@@ -21,25 +21,26 @@ func main() {
 	//http.Handle("/", rootHandler)
 	// а можно из функции
 	http.HandleFunc("/", handler)
-	fmt.Println("starting server at :8080")
+	fmt.Println("starting server at :5555")
 	//http.ListenAndServe(":8080", nil)
-	log.Fatal(http.ListenAndServe("localhost:8080", nil))
+	log.Fatal(http.ListenAndServe("localhost:5555", nil))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	// чтение параметров или так
 	myParam := r.URL.Query().Get("param")
+	//w.Header().Set("Content-Type","text/html")
 	if myParam != "" {
 		fmt.Fprintln(w, "‘myParam‘ is", myParam)
 	}
 	// или так так получаем как get, так и post параметры
-	key := r.FormValue("key")
-	if key != "" {
-		fmt.Fprintln(w, "‘key‘ is", key)
+	name := r.FormValue("name")
+	if name != "" {
+		fmt.Fprintln(w, "Hello, there is", name)
 	}
-	if key == "1" {
+	if name == "1" {
 		fmt.Fprintln(w, "You browser is", r.UserAgent())
-		http.Redirect(w, r, "/", http.StatusFound)
+		//http.Redirect(w, r, "/", http.StatusFound)
 	}
 	fmt.Fprintf(w, "URL.Path = %q\n", r.URL.Path)
 }
