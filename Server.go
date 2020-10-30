@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	http.HandleFunc("/", handler)
 	fmt.Println("starting server at :5555")
 	//http.ListenAndServe(":8080", nil)
-	log.Fatal(http.ListenAndServe("localhost:5555", nil))
+	log.Fatal(http.ListenAndServe(":5555", nil))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -48,4 +49,19 @@ func handler(w http.ResponseWriter, r *http.Request) {
 func aboutHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "URL.Path = %q\n", r.URL.Path)
 	fmt.Fprintf(w, "yasdkf")
+}
+func GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback the display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }
