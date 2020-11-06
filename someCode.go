@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/md5"
 	"database/sql"
 	"fmt"
+	"io"
 	_ "net/http"
 	"os"
 	"time"
@@ -27,8 +29,9 @@ type File struct {
 }
 
 func main() {
-
-	download(conn())
+	db := conn()
+	files := getfiles(db)
+	download(files)
 
 	return
 
@@ -64,10 +67,11 @@ func main() {
 		}*/
 }
 
-func filenames(db *sql.DB) []File {
+func getfiles(db *sql.DB) []File {
 	files := []File{}
-	rows, err := db.Query("SELECT file_name, file_path, md5, file_content, time_loaded FROM updater ")
+	rows, err := db.Query("SELECT file_name, file_path, md5, file_content, time_loaded FROM updater")
 	__err_panic(err)
+	defer rows.Close()
 	for rows.Next() {
 		post := File{}
 		err = rows.Scan(&post.FileName, &post.FilePath, &post.FileMD5, &post.FileContent, &post.FileLoaded)
@@ -75,6 +79,7 @@ func filenames(db *sql.DB) []File {
 		files = append(files, post)
 	}
 	return files
+
 }
 
 func __err_panic(err error) {
@@ -96,9 +101,8 @@ func conn() *sql.DB {
 	fmt.Println("Successfully connected!")
 	return db
 }
-func download(db *sql.DB) {
+func download(files []File) {
 	//fmt.Println(filenames(db))
-	files := filenames(db)
 	for _, file := range files {
 		err := os.MkdirAll(file.FilePath, 0777)
 		__err_panic(err)
@@ -107,9 +111,35 @@ func download(db *sql.DB) {
 			fmt.Println("Unable to create file:", err)
 			os.Exit(1)
 		}
-		f.Write(file.FileContent)
+
+		/*
+			h := md5.New()
+			if _, err := io.Copy(h, f); err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("%x\n", h.Sum(nil))
+			// создается одна и таже сумма ПОЧЕМУ?
+		*/
+		if h := fmt.Sprintf("%x\n", md5.Sum(file.FileContent)); h != FileMD5(file.FilePath+file.FileName) {
+			f.Write(file.FileContent)
+			fmt.Println(file.FileName, "был перезаписан")
+		}
+
 		f.Close()
 	}
 	fmt.Println("Done.")
 
+}
+func FileMD5(path string) string {
+	h := md5.New()
+	f, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	_, err = io.Copy(h, f)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
