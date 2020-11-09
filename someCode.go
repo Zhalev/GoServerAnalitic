@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"io/ioutil"
 	_ "net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -21,18 +23,18 @@ const (
 )
 
 type File struct {
-	FileContent []byte
 	FileName    string
 	FilePath    string
+	FileContent []byte
 	FileMD5     string
 	FileLoaded  time.Time
 }
 
 func main() {
-	db := conn()
-	files := getfiles(db)
+	db := connect()
+	files := getFilesFromDB(db)
 	download(files)
-
+	addFileInDB(db, "e:/GoLangProjects/awesomeProject/conf/db.go")
 	return
 
 	/* пробуем на одном файле */
@@ -67,79 +69,147 @@ func main() {
 		}*/
 }
 
-func getfiles(db *sql.DB) []File {
+func getFilesFromDB(db *sql.DB) []File {
 	files := []File{}
 	rows, err := db.Query("SELECT file_name, file_path, md5, file_content, time_loaded FROM updater")
-	__err_panic(err)
+	errPanic(err)
 	defer rows.Close()
 	for rows.Next() {
 		post := File{}
 		err = rows.Scan(&post.FileName, &post.FilePath, &post.FileMD5, &post.FileContent, &post.FileLoaded)
-		__err_panic(err)
+		errPanic(err)
 		files = append(files, post)
 	}
 	return files
 
 }
+func addFileInDB(db *sql.DB, path string) {
+	// выход если файла нет
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return
+	}
+	file := File{}
+	file.FileMD5 = FileMD5(path)
+	//filepath.Abs(path)
+	file.FileName = filepath.Base(path)
+	// путь к исполняемому файлу
+	cwd, err := os.Executable()
+	rootDir := filepath.Dir(cwd)
+	file.FilePath, _ = filepath.Rel(rootDir, path)
 
-func __err_panic(err error) {
+	fmt.Println(file.FilePath)
+
+	// вытащить из пути название файла и папок
+
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	// чтение данных из файла (ест пробелы сука)
+	/*
+		wr := bytes.Buffer{}
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			wr.WriteString(sc.Text())
+		}
+		fmt.Println(wr.String())
+	*/
+
+	// можно и так тож норм
+	/*	data := make([]byte, 64)
+		var str string
+			for{
+				n, err := f.Read(data)
+				if err == io.EOF{   // если конец файла
+					break           // выходим из цикла
+				}
+				str += string(data[:n])
+
+			}
+			fmt.Print(str)
+
+		file.FileContent = []byte(str)*/
+
+	fContent, err := ioutil.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	file.FileContent = fContent
+
+	file.FileLoaded = time.Now()
+
+	defer db.Close()
+	res, err := db.Exec("INSERT INTO updater (file_name, file_path, md5, file_content, time_loaded) "+
+		"VALUES ($1, $2, $3, $4, $5)", file.FileName, file.FilePath, file.FileMD5, file.FileContent, file.FileLoaded)
+	errPanic(err)
+	if n, _ := res.RowsAffected(); n > 0 {
+		fmt.Println("Файл успешно добавлен в базу")
+
+	}
+}
+
+func errPanic(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
-func conn() *sql.DB {
+func connect() *sql.DB {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
 	db, err := sql.Open("postgres", psqlInfo)
-	__err_panic(err)
+	errPanic(err)
 	//	defer db.Close()
 
 	err = db.Ping()
-	__err_panic(err)
+	errPanic(err)
 
 	fmt.Println("Successfully connected!")
 	return db
 }
 func download(files []File) {
 	//fmt.Println(filenames(db))
+	var (
+		h  string
+		h2 string
+	)
 	for _, file := range files {
-		err := os.MkdirAll(file.FilePath, 0777)
-		__err_panic(err)
-		f, err := os.Create(file.FilePath + file.FileName)
-		if err != nil {
-			fmt.Println("Unable to create file:", err)
-			os.Exit(1)
+		//err := os.MkdirAll(file.FilePath, 0777)
+		//errPanic(err)
+
+		path := file.FilePath + "\\" + file.FileName
+		h2 = FileMD5(path)
+		if h = fmt.Sprintf("%x", md5.Sum(file.FileContent)); h != h2 {
+			WriteContentToFile(path, file.FileContent)
+			fmt.Println(file.FileName, "был перезаписан", h, h2)
 		}
 
-		/*
-			h := md5.New()
-			if _, err := io.Copy(h, f); err != nil {
-				log.Fatal(err)
-			}
-			fmt.Printf("%x\n", h.Sum(nil))
-			// создается одна и таже сумма ПОЧЕМУ?
-		*/
-		if h := fmt.Sprintf("%x\n", md5.Sum(file.FileContent)); h != FileMD5(file.FilePath+file.FileName) {
-			f.Write(file.FileContent)
-			fmt.Println(file.FileName, "был перезаписан")
-		}
-
-		f.Close()
 	}
 	fmt.Println("Done.")
 
 }
 func FileMD5(path string) string {
 	h := md5.New()
-	f, err := os.Open(path)
-	if err != nil {
-		panic(err)
-	}
+	f, err := os.OpenFile(path, os.O_CREATE, 0666)
+	errPanic(err)
 	defer f.Close()
 	_, err = io.Copy(h, f)
 	if err != nil {
 		panic(err)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+func WriteContentToFile(path string, content []byte) {
+	f, err := os.OpenFile(path, os.O_WRONLY, 0666)
+	if err != nil {
+		fmt.Println("Unable to create file:", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+	_, err = f.Write(content)
+	errPanic(err)
+
 }
