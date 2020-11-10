@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	_ "net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -25,8 +26,8 @@ const (
 type File struct {
 	FileName    string
 	FilePath    string
-	FileContent []byte
 	FileMD5     string
+	FileContent []byte
 	FileLoaded  time.Time
 }
 
@@ -34,7 +35,21 @@ func main() {
 	db := connect()
 	files := getFilesFromDB(db)
 	download(files)
-	addFileInDB(db, "e:/GoLangProjects/awesomeProject/conf/db.go")
+	addFileInDB(db, "e:/GoLangProjects/awesomeProject/PlanLogController.go")
+	// запуск внешней программы
+	/*
+		path, err := exec.LookPath("updater.exe")
+		if err != nil {
+			fmt.Println("Файл не найден")
+		}
+		cmd := exec.Command(path)
+	*/
+	cmd := exec.Command("updater.exe")
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Unable to Run Updater file:", err)
+		os.Exit(1)
+	}
 	return
 
 	/* пробуем на одном файле */
@@ -69,9 +84,15 @@ func main() {
 		}*/
 }
 
+func errPanic(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
 func getFilesFromDB(db *sql.DB) []File {
 	files := []File{}
-	rows, err := db.Query("SELECT file_name, file_path, md5, file_content, time_loaded FROM updater")
+	rows, err := db.Query("SELECT file_name, file_path, md5, file_content, time_loaded FROM updater r WHERE time_loaded = (select max(time_loaded) from updater u where r.file_name = u.file_name ) order by r.file_name")
 	errPanic(err)
 	defer rows.Close()
 	for rows.Next() {
@@ -81,8 +102,8 @@ func getFilesFromDB(db *sql.DB) []File {
 		files = append(files, post)
 	}
 	return files
-
 }
+
 func addFileInDB(db *sql.DB, path string) {
 	// выход если файла нет
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -90,32 +111,35 @@ func addFileInDB(db *sql.DB, path string) {
 	}
 	file := File{}
 	file.FileMD5 = FileMD5(path)
-	//filepath.Abs(path)
 	file.FileName = filepath.Base(path)
+
 	// путь к исполняемому файлу
 	cwd, err := os.Executable()
+	errPanic(err)
 	rootDir := filepath.Dir(cwd)
-	file.FilePath, _ = filepath.Rel(rootDir, path)
+	cwd, err = filepath.Rel(rootDir, path)
+	errPanic(err)
+	file.FilePath = filepath.Dir(cwd)
 
-	fmt.Println(file.FilePath)
+	//fmt.Println(file.FilePath)
 
 	// вытащить из пути название файла и папок
-
-	f, err := os.Open(path)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	defer f.Close()
-
-	// чтение данных из файла (ест пробелы сука)
 	/*
-		wr := bytes.Buffer{}
-		sc := bufio.NewScanner(f)
-		for sc.Scan() {
-			wr.WriteString(sc.Text())
+		f, err := os.Open(path)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
 		}
-		fmt.Println(wr.String())
+		defer f.Close()
+
+		// чтение данных из файла (ест пробелы)
+
+			wr := bytes.Buffer{}
+			sc := bufio.NewScanner(f)
+			for sc.Scan() {
+				wr.WriteString(sc.Text())
+			}
+			fmt.Println(wr.String())
 	*/
 
 	// можно и так тож норм
@@ -151,11 +175,6 @@ func addFileInDB(db *sql.DB, path string) {
 	}
 }
 
-func errPanic(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
 func connect() *sql.DB {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
@@ -170,6 +189,7 @@ func connect() *sql.DB {
 	fmt.Println("Successfully connected!")
 	return db
 }
+
 func download(files []File) {
 	//fmt.Println(filenames(db))
 	var (
@@ -177,8 +197,11 @@ func download(files []File) {
 		h2 string
 	)
 	for _, file := range files {
-		//err := os.MkdirAll(file.FilePath, 0777)
-		//errPanic(err)
+		// если папок нет, то создаем
+		if _, err := os.Stat(file.FilePath); os.IsNotExist(err) {
+			err := os.MkdirAll(file.FilePath, 0777)
+			errPanic(err)
+		}
 
 		path := file.FilePath + "\\" + file.FileName
 		h2 = FileMD5(path)
@@ -186,24 +209,22 @@ func download(files []File) {
 			WriteContentToFile(path, file.FileContent)
 			fmt.Println(file.FileName, "был перезаписан", h, h2)
 		}
-
 	}
 	fmt.Println("Done.")
-
 }
+
 func FileMD5(path string) string {
 	h := md5.New()
 	f, err := os.OpenFile(path, os.O_CREATE, 0666)
 	errPanic(err)
 	defer f.Close()
 	_, err = io.Copy(h, f)
-	if err != nil {
-		panic(err)
-	}
+	errPanic(err)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
+
 func WriteContentToFile(path string, content []byte) {
-	f, err := os.OpenFile(path, os.O_WRONLY, 0666)
+	f, err := os.OpenFile(path, os.O_CREATE, 0666)
 	if err != nil {
 		fmt.Println("Unable to create file:", err)
 		os.Exit(1)
